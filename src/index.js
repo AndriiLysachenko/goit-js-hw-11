@@ -1,107 +1,108 @@
 import axios from "axios";
-import { Report } from 'notiflix/build/notiflix-report-aio';
-import { Notify } from 'notiflix/build/notiflix-notify-aio';
-import SimpleLightbox from  "simplelightbox";
+import Notiflix from 'notiflix';
+import SimpleLightbox from "simplelightbox";
 import "simplelightbox/dist/simple-lightbox.min.css";
-import PixabayService from "./pixabay-api";
-import createMarkup from "./markup";
 
-const form = document.querySelector(`.search-form`);
-const input = document.querySelector(`input`);
-const button = document.querySelector(`button`);
-const div = document.querySelector(`.gallery`);
-const btnLoadMore = document.querySelector(`.load-more`);
+import { fetchIMG, API_KEY } from './api.js';
 
-const notifyInit = {
-    width: '450px',
-    heigh: '100px',
-    position: 'center-center',
-    timeout: 2000,
-    fontSize: '20px',
+let currentPage = 1;
+let currentQuery = '';
 
-};
-
-const pixabayApi = new PixabayService();
+const searchForm = document.getElementById('search-form');
+const loadMoreBtn = document.querySelector('.load-more');
+const galleryContainer = document.getElementById('gallery');
+const endMessage = document.getElementById('end-message');
 
 
-let lightbox = new SimpleLightbox('.gallery a', {
-    captionDelay: 250,
+searchForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  const searchQuery = e.target.elements.searchQuery.value.trim();
+  if (searchQuery === '') {
+    return;
+  }
+  currentQuery = searchQuery;
+  currentPage = 1;
+  galleryContainer.innerHTML = '';
+  await searchImages(searchQuery);
 });
 
-form.addEventListener(`submit`, onSearch);
-btnLoadMore.addEventListener(`click`, onLoadMore);
+loadMoreBtn.addEventListener('click', async () => {
+  currentPage++;
+  await searchImages(currentQuery);
+});
 
-btnLoadMore.style.visibility = `hidden`;
+async function searchImages(query) {
+  const url = fetchIMG(query, currentPage);
+  try {
+    const response = await axios.get(url);
+    const { hits, totalHits } = response.data;
 
-
-async function onSearch(e) {
-    e.preventDefault();
-    // console.log(`submit`);
-    pixabayApi.searchQuery = e.currentTarget.elements.searchQuery.value;
-    pixabayApi.resetPage();
-    const img = await pixabayApi.fetchArticles();
-    const images = img.hits;
-    // console.log(images);
-    const getImages = images.length;
-    const totalHits = img.totalHits;
-    // console.log(totalHits);
-    
-        // const totalImages = pixabayApi.hasMorePhotos();
-        // console.log(totalImages);
-    if (totalHits === getImages) {
-        btnLoadMore.style.visibility = `hidden`;
-        Notify.info("We're sorry, but you've reached the end of search results.", notifyInit);
+    if (hits.length === 0) {
+      if (currentPage === 1) {
+        showNotification(
+          'Sorry, there are no images matching your search query. Please try again.'
+        );
+      }
+           return;
     }
-    else 
-    btnLoadMore.style.visibility = `visible`;
-    // console.log(images);
-try {
-    if (images.length === 0) {
-        form.reset();
-        div.innerHTML = '';
-        btnLoadMore.style.visibility = `hidden`;
-        Notify.info('Sorry, there are no images matching your search query. Please try again.', notifyInit);
-        return;
+    createGallery(hits);
+    if (totalHits > currentPage * 40) {
+      showLoadMoreButton();
+    } else {
+      hideLoadMoreButton();
     }
-    // console.log(images);
-    div.innerHTML = createMarkup(images);
-    lightbox.refresh();
+  } catch (error) {
+    console.error(error);
+  }
 }
-    catch { Report.failure('Sorry!Something went wrong', '', 'Okay',); }
-finally {
-    form.reset(); 
-}   
-};
 
-const per_Page = pixabayApi.per_page;
-// console.log(pixabayApi.per_page);
+function createGallery(images) {
+  
+  const galleryElement = images.map( (image) => {
+   return  ` <div class="photo-card">
+   <a href="${image.largeImageURL}"><img src="${image.webformatURL}" alt="${image.tags}" loading="lazy" width="300"/></a>
+   
+    <div class="info">
+      <p  class="info-item">
+        <b>Likes</b>
+        <b>${image.likes}</b>
+      </p>
+      <p class="info-item">
+        <b>Views</b>
+        <b>${image.views}</b>
+      </p>
+      <p class="info-item">
+      <b>Comments</b> 
+      <b>${image.comments}</b>
+      </p>
+      <p class="info-item">
+        <b>Downloads</b>
+        <b>${image.downloads}</b>
+      </p>
+    </div>
+  </div>`
+    } )
+  .join("");
+  galleryContainer.insertAdjacentHTML("beforeend", galleryElement);
 
+  let lightbox = new SimpleLightbox("#gallery a", {
+    captionsData: "alt", 
+  captionDelay: 250,
+  });
+  lightbox.refresh();
+  }
+  
+function showLoadMoreButton() {
+  loadMoreBtn.style.display = 'block';
+  endMessage.style.display = 'none';
+}
 
-async function onLoadMore() {
-btnLoadMore.style.visibility = `hidden`;
-pixabayApi.incrementPage();
-const img = await pixabayApi.fetchArticles();
-const images = img.hits;
-const totalHits = img.totalHits;
-// console.log(totalHits);
-    const allImages = pixabayApi.hasMorePhotos();
-    // console.log(allImages);
+function hideLoadMoreButton() {
+  loadMoreBtn.style.display = 'none';
+  endMessage.style.display = 'block';
+  endMessage.textContent = "We're sorry, but you've reached the end of search results.";
+}
 
-    if ((totalHits - allImages) < per_Page) {
-    div.innerHTML += createMarkup(images);
-    lightbox.refresh();
-    Notify.info("We're sorry, but you've reached the end of search results.", notifyInit);
-    btnLoadMore.style.visibility = `hidden`;
-    return;
-    }
-
-    try {
-    div.innerHTML += createMarkup(images);
-    lightbox.refresh();
-    btnLoadMore.style.visibility = `visibile`;
-    }
-    catch {
-        Report.failure('Sorry!Something went wrong', '', 'Okay',);
-    }
-    
+function showNotification(message) {
+  Notiflix.Notify.failure(message);
 }
